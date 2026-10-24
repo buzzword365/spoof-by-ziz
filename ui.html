@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spoof by Ziz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: #07080c;
+    --glass: rgba(16, 18, 26, 0.78);
+    --glass-2: rgba(255, 255, 255, 0.05);
+    --line: rgba(255, 255, 255, 0.09);
+    --text: #f4f5f8;
+    --muted: #8b90a0;
+    --accent: #7c5cff;
+    --accent-2: #00d4ff;
+    --ok: #2fe39a;
+    --warn: #ffb547;
+    --bad: #ff5c7a;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 Inter, -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  #map { position: fixed; inset: 0; background: var(--bg); }
+  /* Free OSM tiles, turned into a dark map */
+  .leaflet-tile-pane { filter: invert(1) hue-rotate(200deg) brightness(.85) contrast(.9) saturate(.6); }
+  .leaflet-control-attribution { background: rgba(0,0,0,.5) !important; color: #777 !important; }
+  .leaflet-control-attribution a { color: #999 !important; }
+  .leaflet-bar a { background: var(--glass) !important; color: var(--text) !important; border-color: var(--line) !important; backdrop-filter: blur(12px); }
+
+  /* Panel */
+  .panel {
+    position: fixed; top: 16px; left: 16px; bottom: 16px; width: 380px; z-index: 1000;
+    background: var(--glass); backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%);
+    border: 1px solid var(--line); border-radius: 24px; box-shadow: 0 30px 80px rgba(0,0,0,.55);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .scroll { overflow: auto; padding: 0 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* Brand */
+  .brand { padding: 22px 20px 18px; position: relative; overflow: hidden; flex: none; }
+  .brand::before { content: ""; position: absolute; inset: -60% -20% auto auto; width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(124,92,255,.45), transparent 65%); pointer-events: none; }
+  .eyebrow { font: 600 11px/1 Inter, sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; gap: 8px; }
+  .eyebrow svg { width: 14px; height: 14px; color: var(--accent-2); }
+  .ziz {
+    margin: 12px 0 0; font: 700 92px/0.88 "Space Grotesk", Inter, sans-serif; letter-spacing: -0.04em;
+    background: linear-gradient(100deg, #fff 0%, #c9bcff 35%, var(--accent) 60%, var(--accent-2) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 6px 30px rgba(124,92,255,.35));
+  }
+
+  /* Status card */
+  .card { background: var(--glass-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  .status { display: flex; align-items: center; gap: 12px; }
+  .dot { position: relative; width: 12px; height: 12px; border-radius: 50%; background: var(--bad); flex: none; }
+  .dot::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid currentColor; opacity: 0; }
+  .dot.ok { background: var(--ok); color: var(--ok); } .dot.ok::after { animation: ping 1.8s infinite; }
+  .dot.wait { background: var(--warn); color: var(--warn); } .dot.wait::after { animation: ping 1s infinite; }
+  @keyframes ping { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(1.8); opacity: 0; } }
+  #status { font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12.5px; }
+  .live { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: baseline; }
+  .live b { font: 500 13px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: -.01em; }
+
+  /* Inputs */
+  label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .field { position: relative; }
+  .field svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--muted); pointer-events: none; }
+  input[type=text], input:not([type]) {
+    width: 100%; height: 44px; padding: 0 14px 0 38px; border-radius: 12px; border: 1px solid var(--line);
+    background: rgba(0,0,0,.35); color: var(--text); font: inherit; outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus { border-color: rgba(124,92,255,.7); box-shadow: 0 0 0 4px rgba(124,92,255,.18); }
+  input::placeholder { color: #5d6272; }
+  #results { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  #results:empty { display: none; }
+  .result { text-align: left; padding: 10px 12px; border-radius: 10px; border: 0; background: var(--glass-2); color: var(--text);
+    font: inherit; font-size: 13px; cursor: pointer; line-height: 1.35; }
+  .result:hover { background: rgba(124,92,255,.18); }
+  .result small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Buttons */
+  button { font: inherit; cursor: pointer; }
+  .btn { height: 46px; border-radius: 12px; border: 1px solid var(--line); background: var(--glass-2); color: var(--text);
+    font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: transform .08s, background .15s, filter .15s; }
+  .btn:hover { background: rgba(255,255,255,.09); }
+  .btn:active { transform: scale(.98); }
+  .btn svg { width: 18px; height: 18px; }
+  .btn.primary { border: 0; background: linear-gradient(110deg, var(--accent), #5a7dff 55%, var(--accent-2));
+    box-shadow: 0 10px 30px rgba(124,92,255,.45), inset 0 1px 0 rgba(255,255,255,.25); }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.danger { color: var(--bad); border-color: rgba(255,92,122,.25); background: rgba(255,92,122,.07); }
+  .btn.danger:hover { background: rgba(255,92,122,.14); }
+  .btn.small { height: 32px; padding: 0 12px; font-size: 12.5px; border-radius: 9px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .full { width: 100%; }
+
+  .speed { display: flex; align-items: center; gap: 12px; }
+  .speed span { font: 600 13px/1 ui-monospace, Menlo, monospace; min-width: 70px; text-align: right; color: var(--text); }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+
+  /* Saved spots */
+  .row { display: flex; justify-content: space-between; align-items: center; }
+  #favs { display: flex; flex-wrap: wrap; gap: 8px; }
+  #favs:empty::before { content: "No saved spots yet. Drop a pin and save it."; color: var(--muted); font-size: 12.5px; }
+  .chip { display: inline-flex; align-items: center; border-radius: 999px; background: var(--glass-2); border: 1px solid var(--line); overflow: hidden; }
+  .chip button { border: 0; background: none; color: var(--text); padding: 7px 4px 7px 12px; font-size: 12.5px; font-weight: 500; }
+  .chip button.x { color: var(--muted); padding: 7px 10px 7px 6px; }
+  .chip:hover { border-color: rgba(124,92,255,.5); }
+
+  /* Toast */
+  #msg { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px); z-index: 1100; opacity: 0; pointer-events: none;
+    padding: 12px 18px; border-radius: 14px; background: var(--glass); backdrop-filter: blur(18px); border: 1px solid var(--line);
+    box-shadow: 0 20px 50px rgba(0,0,0,.5); font-weight: 500; max-width: min(520px, calc(100vw - 32px)); text-align: center;
+    transition: opacity .2s, transform .2s; }
+  #msg.show { opacity: 1; transform: translate(-50%, 0); }
+  #msg.err { border-color: rgba(255,92,122,.45); color: #ffc2cf; }
+  @media (min-width: 761px) { #msg { left: calc(50% + 206px); } }
+
+  /* Map markers */
+  .me { width: 22px; height: 22px; border-radius: 50%; background: var(--accent-2); border: 3px solid #fff;
+    box-shadow: 0 0 0 6px rgba(0,212,255,.25), 0 4px 14px rgba(0,0,0,.5); }
+  .me::after { content: ""; position: absolute; inset: -14px; border-radius: 50%; background: rgba(0,212,255,.25); animation: halo 2s infinite; }
+  @keyframes halo { 0% { transform: scale(.4); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+  .pin { width: 34px; height: 34px; transform: translateY(-14px); filter: drop-shadow(0 6px 10px rgba(0,0,0,.5)); }
+
+  .foot { margin-top: auto; padding-top: 6px; color: #4d5262; font-size: 11.5px; text-align: center; letter-spacing: .04em; }
+
+  /* Phone: panel becomes a bottom sheet */
+  @media (max-width: 760px) {
+    .panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 62vh; border-radius: 22px; }
+    .brand { padding: 16px 16px 10px; } .scroll { padding: 0 16px 16px; }
+    .ziz { font-size: 56px; }
+    .leaflet-top.leaflet-left { top: 8px; }
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<aside class="panel">
+  <div class="brand">
+    <div class="eyebrow">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+      iPhone Location Spoofer
+    </div>
+    <div class="ziz">BY ZIZ</div>
+  </div>
+
+  <div class="scroll">
+    <div class="card">
+      <div class="status"><span class="dot" id="dot"></span>
+        <div><div id="status">Looking for your iPhone…</div><div class="sub" id="device">Plug it in with a cable</div></div>
+      </div>
+      <div class="live"><span class="sub">Phone is at</span><b id="where">Real GPS</b></div>
+    </div>
+
+    <div>
+      <label for="q">Search</label>
+      <form id="searchForm" class="field">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" placeholder="Eiffel Tower, Shibuya, Times Square…" autocomplete="off">
+      </form>
+      <div id="results"></div>
+    </div>
+
+    <div>
+      <label for="coords">Coordinates</label>
+      <div class="field">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+        <input id="coords" placeholder="40.6892, -74.0445  ·  or click the map">
+      </div>
+    </div>
+
+    <div class="grid2">
+      <button class="btn primary" id="teleport">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>Teleport
+      </button>
+      <button class="btn" id="walk">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13" cy="4" r="2"/><path d="m9 20 3-6 3 3v4M7 12l3-4 4 1 3 3"/></svg><span>Walk there</span>
+      </button>
+    </div>
+
+    <div>
+      <label for="speed">Walk speed</label>
+      <div class="speed"><input id="speed" type="range" min="1" max="60" value="5"><span id="speedVal">5 km/h</span></div>
+    </div>
+
+    <button class="btn danger full" id="stop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop spoofing · back to real GPS
+    </button>
+
+    <div>
+      <div class="row" style="margin-bottom:10px"><label style="margin:0">Saved spots</label><button class="btn small" id="save">+ Save pin</button></div>
+      <div id="favs"></div>
+    </div>
+
+    <div class="foot">made by ziz · com.apple.dt.simulatelocation</div>
+  </div>
+</aside>
+
+<div id="msg"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const map = L.map('map', { zoomControl: false }).setView([40.6892, -74.0445], 14);
+L.control.zoom({ position: 'topright' }).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const pinIcon = L.divIcon({ className: '', iconSize: [34, 34], iconAnchor: [17, 34],
+  html: `<svg class="pin" viewBox="0 0 24 24"><defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#00d4ff"/></linearGradient></defs>
+         <path fill="url(#g)" stroke="#fff" stroke-width="1.4" d="M12 23s8-7 8-13.5a8 8 0 1 0-16 0C4 16 12 23 12 23Z"/><circle cx="12" cy="9.5" r="3" fill="#fff"/></svg>` });
+const meIcon = L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: '<div class="me"></div>' });
+
+let pin = null;          // where the user wants to go
+let live = null;         // where the phone is meant to be
+let walking = null;
+const liveMarker = L.marker([0, 0], { icon: meIcon, interactive: false, zIndexOffset: -100 });
+const pathLine = L.polyline([], { color: '#7c5cff', weight: 3, dashArray: '6 8', opacity: .9 });
+
+function drawLine() {
+  if (pin && live && (pin[0] !== live[0] || pin[1] !== live[1])) pathLine.setLatLngs([live, pin]).addTo(map);
+  else pathLine.remove();
+}
+
+function setPin(lat, lon, pan) {
+  pin = [lat, lon];
+  $('coords').value = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  if (!setPin.m) setPin.m = L.marker(pin, { icon: pinIcon }).addTo(map); else setPin.m.setLatLng(pin);
+  if (pan) map.flyTo(pin, Math.max(map.getZoom(), 15), { duration: .8 });
+  drawLine();
+}
+map.on('click', e => setPin(e.latlng.lat, e.latlng.lng));
+$('coords').addEventListener('change', () => {
+  const m = $('coords').value.match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+  if (m) setPin(+m[1], +m[2], true); else say('Enter coordinates like 40.6892, -74.0445', true);
+});
+
+let toastTimer;
+function say(text, err) {
+  clearTimeout(toastTimer);
+  $('msg').textContent = text || '';
+  $('msg').className = text ? 'show' + (err ? ' err' : '') : '';
+  if (text) toastTimer = setTimeout(() => $('msg').className = '', err ? 6000 : 3200);
+}
+
+const reconnecting = s => s.location && !s.active;
+
+function showStatus(s) {
+  $('dot').className = 'dot' + (reconnecting(s) ? ' wait' : s.connected ? ' ok' : '');
+  $('status').textContent = reconnecting(s) ? 'Reconnecting…' : s.connected ? (s.name || 'iPhone') : 'No iPhone connected';
+  $('device').textContent = reconnecting(s)
+    ? 'Cable dropped. Your spot comes back automatically.'
+    : s.connected ? `iOS ${s.ios} · ${s.mode === 'dvt' ? 'DVT (iOS 17+)' : 'simulatelocation'}` : 'Plug it in with a cable';
+  live = s.location;
+  $('where').textContent = live ? `${live[0].toFixed(5)}, ${live[1].toFixed(5)}` : 'Real GPS';
+  if (live) liveMarker.setLatLng(live).addTo(map); else liveMarker.remove();
+  drawLine();
+}
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  const data = await r.json();
+  if ('connected' in data) showStatus(data);
+  // A set while the cable is out is remembered and applied on reconnect, so it's not a failure.
+  if (!r.ok && !(path === '/api/set' && reconnecting(data))) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+async function teleport(lat, lon) { return api('/api/set', { lat, lon }); }
+
+$('teleport').onclick = async () => {
+  if (!pin) return say('Pick a spot on the map first.', true);
+  stopWalk();
+  say('Teleporting…');
+  try {
+    const s = await teleport(...pin);
+    say(reconnecting(s)
+      ? 'Phone is disconnected. It will move there as soon as it reconnects.'
+      : 'Teleported ⚡');
+  }
+  catch (e) { say(e.message, true); }
+};
+
+$('stop').onclick = async () => {
+  stopWalk();
+  try { await api('/api/clear', {}); say('Stopped. Your phone is back on real GPS.'); }
+  catch (e) { say(e.message, true); }
+};
+
+// Walk: step toward the pin once per second.
+function distM(a, b) {
+  const R = 6371000, t = Math.PI / 180;
+  const dLat = (b[0] - a[0]) * t, dLon = (b[1] - a[1]) * t;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * t) * Math.cos(b[0] * t) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+$('speed').oninput = () => $('speedVal').textContent = `${$('speed').value} km/h`;
+function stopWalk() { if (walking) { clearInterval(walking); walking = null; $('walk').querySelector('span').textContent = 'Walk there'; } }
+$('walk').onclick = () => {
+  if (walking) return stopWalk(), say('Walk paused.');
+  if (!pin) return say('Pick a spot on the map first.', true);
+  if (!live) return say('Teleport somewhere first, then walk from there.', true);
+  const target = pin.slice();
+  $('walk').querySelector('span').textContent = 'Pause';
+  walking = setInterval(async () => {
+    const step = Math.max(1, +$('speed').value || 5) / 3.6;   // metres per 1s tick
+    const d = distM(live, target);
+    const f = d <= step ? 1 : step / d;
+    const next = [live[0] + (target[0] - live[0]) * f, live[1] + (target[1] - live[1]) * f];
+    try {
+      await teleport(...next);
+      // The server keeps the latest step and the watchdog catches the phone up after a drop.
+      say(f === 1 ? 'Arrived 📍' : `Walking… ${Math.round(d - step)} m to go`);
+      if (f === 1) stopWalk();
+    } catch (e) { stopWalk(); say(e.message, true); }
+  }, 1000);
+};
+
+// Search via OpenStreetMap Nominatim.
+$('searchForm').onsubmit = async e => {
+  e.preventDefault();
+  const q = $('q').value.trim(); if (!q) return;
+  $('results').innerHTML = '<div class="sub" style="padding:6px 2px">Searching…</div>';
+  try {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=5&q=' + encodeURIComponent(q));
+    const hits = await r.json();
+    $('results').innerHTML = '';
+    if (!hits.length) $('results').innerHTML = '<div class="sub" style="padding:6px 2px">No results.</div>';
+    for (const h of hits) {
+      const [title, ...rest] = h.display_name.split(', ');
+      const b = document.createElement('button');
+      b.className = 'result';
+      b.textContent = title;
+      const small = document.createElement('small'); small.textContent = rest.join(', '); b.appendChild(small);
+      b.onclick = () => { setPin(+h.lat, +h.lon, true); $('results').innerHTML = ''; };
+      $('results').appendChild(b);
+    }
+  } catch { $('results').innerHTML = '<div class="sub" style="padding:6px 2px">Search failed.</div>'; }
+};
+
+// Saved spots live in this browser only.
+function loadFavs() { try { return JSON.parse(localStorage.getItem('spoof-favs')) || []; } catch { return []; } }
+function saveFavs(f) { try { localStorage.setItem('spoof-favs', JSON.stringify(f)); } catch {} }
+function drawFavs() {
+  $('favs').innerHTML = '';
+  loadFavs().forEach((f, i) => {
+    const chip = document.createElement('div'); chip.className = 'chip';
+    const go = document.createElement('button'); go.textContent = f.name; go.onclick = () => setPin(f.lat, f.lon, true);
+    const del = document.createElement('button'); del.className = 'x'; del.textContent = '✕'; del.title = 'Remove';
+    del.onclick = () => { const all = loadFavs(); all.splice(i, 1); saveFavs(all); drawFavs(); };
+    chip.append(go, del); $('favs').appendChild(chip);
+  });
+}
+$('save').onclick = () => {
+  if (!pin) return say('Drop a pin first.', true);
+  const name = prompt('Name this spot', $('coords').value); if (!name) return;
+  saveFavs([...loadFavs(), { name, lat: pin[0], lon: pin[1] }]); drawFavs();
+};
+drawFavs();
+
+async function poll() {
+  try { const s = await api('/api/status'); if (!s.connected && !s.location) await api('/api/connect', {}).catch(e => { $('device').textContent = e.message; }); }
+  catch {}
+}
+poll().then(() => { if (live) map.setView(live, 15); });
+setInterval(poll, 4000);
+</script>
+</body>
+</html>
