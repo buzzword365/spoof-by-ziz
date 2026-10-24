@@ -1,4 +1,4 @@
-# iPhone location spoofer — BY ZIZ
+# iPhone location spoofer
 
 Sets your iPhone's GPS location over a USB cable, using Apple's own developer services.
 Click a spot on the map to teleport, or walk there at a set speed.
